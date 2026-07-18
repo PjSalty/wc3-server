@@ -1,0 +1,21 @@
+wc3-server
+
+This repository is open-source glue (docker-compose, configuration templates,
+Dockerfiles, entrypoints, and docs) that composes third-party open-source
+software. The glue is licensed under the MIT License (see LICENSE). The software
+it builds carries its own licenses:
+
+- PvPGN-PRO (the Battle.net realm) is licensed under the GNU General Public
+  License v2.0. This repo builds it from upstream source; it does not modify or
+  redistribute PvPGN binaries.
+- aura-bot (the autohost bot) is distributed under its own upstream license;
+  this repo builds it from a pinned upstream commit.
+- The wc3-relay tunnel daemon is built from the separate wc3-launcher repository
+  (github.com/PjSalty/wc3-launcher) under its own license.
+
+No Blizzard Entertainment software, binaries, or game data are distributed by
+this repository. Warcraft III and Battle.net are trademarks of Blizzard
+Entertainment, Inc. You must own Warcraft III and supply your own game data
+(for example common.j and blizzard.j from your own installation) to enable map
+hosting. The open-source W3L loader lets a classic client connect to a
+non-Blizzard realm; the game client itself is never redistributed here.

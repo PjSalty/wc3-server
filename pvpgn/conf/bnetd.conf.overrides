@@ -1,0 +1,38 @@
+# pvpgn/conf/bnetd.conf.overrides
+#
+# Private Warcraft III: The Frozen Throne realm overlay.
+#
+# entrypoint.sh applies each "key = value" below into the installed
+# /usr/local/pvpgn/etc/pvpgn/bnetd.conf, replacing the upstream default line
+# (commented or not) or appending it if absent. Only the keys a private WC3
+# realm pins are listed. Every other setting keeps its upstream default.
+#
+# Reference: github.com/pvpgn/pvpgn-server, conf/bnetd.conf.in @ tag 1.99.7.2.1.
+# The ${LOCALSTATEDIR} / ${SYSCONFDIR} tokens in the default file are expanded
+# by bnetd itself at runtime, so paths are not touched here.
+#
+# NOTE: storage_path already defaults to the plain-file backend
+#   (file:mode=plain;dir=${LOCALSTATEDIR}/users;...), which is what a private
+#   server wants, so it is deliberately NOT overridden here.
+# NOTE: logfile and transfile are set dynamically by entrypoint.sh
+#   (PVPGN_LOG_STDOUT and PVPGN_PUBLIC_IP), so they are not pinned here.
+
+# Do NOT announce this realm to any public server tracker. 0 = private.
+track = 0
+
+# Allow account creation from the game client so friends self-register.
+# Upstream default is already true; pinned so a future default flip can't
+# silently lock players out.
+new_accounts = true
+
+# Client listener: all interfaces, default Battle.net port 6112/tcp.
+servaddrs = ":"
+
+# Warcraft III matchmaking route listener (w3route) on 6200/tcp, all
+# interfaces. NAT to the public IP is handled by entrypoint.sh via
+# address_translation.conf (set PVPGN_PUBLIC_IP).
+w3routeaddr = "0.0.0.0:6200"
+
+# Message shown to WC3 clients in the custom-games menu (file lives in the
+# server's files dir, installed by upstream).
+motdw3file = w3motd.txt

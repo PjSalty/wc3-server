@@ -1,0 +1,165 @@
+# deploy/docker-compose.yml
+#
+# Warcraft III: The Frozen Throne (classic, NOT Reforged) private server.
+# Three locally-built or registry-pulled images composed together:
+#
+#   pvpgn      PvPGN-PRO realm: bnet login/chat/game-list (6112/tcp)
+#              plus the built-in w3route session relay (6200/tcp).
+#   wc3-relay  Native-host tunnel relay (from the separate wc3-launcher repo,
+#              cmd/wc3-relay). Lets a player host a game with zero router config:
+#              their launcher opens one outbound TLS tunnel to this relay, which
+#              allocates a public game port and proxies joiners to them.
+#   aura       Autohost bot (Slayer95/aura-bot). Logs into the realm and hosts
+#              lobbies for players who do not host their own.
+#
+# EVERYTHING a deployer changes lives in .env (copy .env.example -> .env).
+# Nothing here contains a real hostname, IP, secret, or registry. Image tags
+# are pinned via env, never :latest. Secrets (BOT_PASSWORD, RELAY_TOKEN) come
+# from the environment / your secret store, never committed.
+#
+# Legal: this repo ships only open-source server code. You must supply your own
+# Warcraft III game data (common.j + blizzard.j from your own install) to enable
+# aura map hosting. No Blizzard binaries are distributed here.
+name: wc3-server
+
+services:
+  # ---------------------------------------------------------------------------
+  # pvpgn: the Battle.net realm. Core of the server; runs standalone.
+  # ---------------------------------------------------------------------------
+  pvpgn:
+    # Built locally from ../pvpgn by default. Set IMAGE_REGISTRY to pull a
+    # prebuilt image instead (e.g. IMAGE_REGISTRY=ghcr.io/your-org).
+    image: ${IMAGE_REGISTRY:-localhost/wc3}/pvpgn:${PVPGN_TAG:-latest}
+    build:
+      context: ../pvpgn
+    container_name: wc3-pvpgn
+    restart: unless-stopped
+    # 6112/tcp = bnetd client port (login, chat, game list).
+    # 6200/tcp = w3route session relay (pvpgn's own game-session relay).
+    # Both are TCP; the legacy bnet UDP test port is not needed.
+    ports:
+      - "${PVPGN_BNET_PORT:-6112}:6112/tcp"
+      - "${PVPGN_W3ROUTE_PORT:-6200}:6200/tcp"
+    environment:
+      # Public WAN IP (or a resolvable address) the w3route relay advertises to
+      # external clients. The entrypoint renders address_translation.conf from
+      # this for split-horizon NAT (LAN clients keep the internal address).
+      PVPGN_PUBLIC_IP: "${PUBLIC_IP:?set PUBLIC_IP in .env}"
+      # Client networks that keep the internal address (RFC1918 by default).
+      PVPGN_LOCAL_CIDR: "${PVPGN_LOCAL_CIDR:-192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}"
+      # Private-realm hardening (baked defaults; override in .env only if needed):
+      PVPGN_NEW_ACCOUNTS: "${PVPGN_NEW_ACCOUNTS:-true}"   # in-client account signup
+      PVPGN_TRACK: "${PVPGN_TRACK:-0}"                    # 0 = never announce to public trackers
+    volumes:
+      # Accounts, clan/channel state, logs; persists across image upgrades.
+      - pvpgn-var:/usr/local/pvpgn/var
+    networks:
+      - wc3net
+
+  # ---------------------------------------------------------------------------
+  # wc3-relay: native-host tunnel relay. Built from the separate wc3-launcher
+  # repo (cmd/wc3-relay), NOT from this repo. Two ways to supply the image:
+  #   1. Pull one you pushed:  set IMAGE_REGISTRY and WC3_RELAY_TAG.
+  #   2. Build it yourself:    clone the wc3-launcher repo, build cmd/wc3-relay
+  #      into an image, and tag it to match the image: line below (or point the
+  #      commented build context at your local checkout).
+  # ---------------------------------------------------------------------------
+  wc3-relay:
+    image: ${IMAGE_REGISTRY:-localhost/wc3}/wc3-relay:${WC3_RELAY_TAG:-latest}
+    # Uncomment to build from a local wc3-launcher checkout beside this repo.
+    # The relay Dockerfile lives in that repo, not here.
+    # build:
+    #   context: ${WC3_LAUNCHER_PATH:-../../wc3-launcher}
+    #   dockerfile: Dockerfile.relay
+    container_name: wc3-relay
+    restart: unless-stopped
+    depends_on:
+      pvpgn:
+        condition: service_started
+    # Tunnel port: host launchers open ONE outbound (TLS) connection here.
+    # Game-port pool: the public ports the relay hands out to hosted games.
+    # BOTH must be forwarded from your router to this host, and the pool range
+    # must match RELAY_POOL_LO..RELAY_POOL_HI below. Keep the pool distinct from
+    # pvpgn's 6200 w3route port.
+    ports:
+      - "${RELAY_TUNNEL_PORT:-7000}:7000/tcp"
+      - "${RELAY_POOL_LO:-6300}-${RELAY_POOL_HI:-6399}:${RELAY_POOL_LO:-6300}-${RELAY_POOL_HI:-6399}/tcp"
+    # Flag-only settings (addressing + pool). Auth/TLS are read from env below.
+    command:
+      - "-listen=:7000"
+      - "-pvpgn=pvpgn:6112"
+      - "-public-ip=${PUBLIC_IP:?set PUBLIC_IP in .env}"
+      - "-pool-lo=${RELAY_POOL_LO:-6300}"
+      - "-pool-hi=${RELAY_POOL_HI:-6399}"
+    environment:
+      # Shared tunnel token launchers must present. Empty = token gate OFF.
+      # Set RELAY_REQUIRE_AUTH=1 to actually reject launchers without it.
+      RELAY_TOKEN: "${RELAY_TOKEN:-}"
+      RELAY_REQUIRE_AUTH: "${RELAY_REQUIRE_AUTH:-0}"
+      # TLS on the tunnel port. Point these at the mounted cert/key (see the
+      # volume below). Leave empty to run plaintext during initial rollout.
+      # Set RELAY_REQUIRE_TLS=1 to reject plaintext tunnels once TLS is live.
+      RELAY_TLS_CERT: "${RELAY_TLS_CERT:-}"
+      RELAY_TLS_KEY: "${RELAY_TLS_KEY:-}"
+      RELAY_REQUIRE_TLS: "${RELAY_REQUIRE_TLS:-0}"
+    volumes:
+      # Host dir holding the relay's TLS cert + key, mounted read-only. Set
+      # RELAY_TLS_CERT / RELAY_TLS_KEY to the in-container paths, e.g.
+      # /tls/fullchain.pem and /tls/privkey.pem.
+      - "${RELAY_TLS_DIR:-./tls}:/tls:ro"
+    networks:
+      - wc3net
+
+  # ---------------------------------------------------------------------------
+  # aura: autohost bot. Optional but recommended. Logs into pvpgn over the
+  # internal network and hosts lobbies. Idles (does not crash) until you supply
+  # game data, so it is safe to run before dropping in common.j + blizzard.j.
+  # ---------------------------------------------------------------------------
+  aura:
+    image: ${IMAGE_REGISTRY:-localhost/wc3}/aura-bot:${AURA_TAG:-latest}
+    build:
+      context: ../aura
+    container_name: wc3-aura
+    restart: unless-stopped
+    depends_on:
+      pvpgn:
+        condition: service_started
+    # aura's own fixed host port for the lobbies it hosts. Forward this too.
+    ports:
+      - "${AURA_HOST_PORT:-6113}:6113/tcp"
+    environment:
+      # The realm aura logs into: the pvpgn service on the internal bridge.
+      AURA_REALM_HOST: "pvpgn"
+      AURA_REALM_PORT: "6112"
+      # Display name of the realm as shown by the bot. Parameterized.
+      AURA_REALM_NAME: "${REALM_NAME:-My WC3 Realm}"
+      AURA_REALM_USERNAME: "${BOT_USERNAME:?set BOT_USERNAME in .env}"
+      AURA_REALM_PASSWORD: "${BOT_PASSWORD:?set BOT_PASSWORD via env/secret store}"
+      AURA_REALM_GAME_VERSION: "${WC3_GAME_VERSION:-1.27}"
+      # Public IP so hosted games advertise a reachable address to players.
+      AURA_PUBLIC_IP: "${PUBLIC_IP:?set PUBLIC_IP in .env}"
+      # In-lobby map transfer ceiling in KB (upstream default 8192).
+      AURA_MAP_TRANSFER_MAX_SIZE: "${AURA_MAP_TRANSFER_MAX_SIZE:-131072}"
+      # JASS dir the bot watches for user-supplied game data.
+      AURA_JASS_DIR: "/var/lib/aura/jass"
+    volumes:
+      # Map library: drop .w3x/.w3m here; auto-downloads also land here.
+      - wc3-maps:/var/lib/aura/maps
+      # Persisted bot config/state.
+      - aura-config:/var/lib/aura/config
+      # YOUR Warcraft III game data (common.j + blizzard.j) enables hosting.
+      # Extract them from your own WC3 install (War3x.mpq -> Scripts/) and drop
+      # them into this host dir. Never redistributed by this repo.
+      - "${WC3_JASS_DIR:-./jass}:/var/lib/aura/jass"
+    networks:
+      - wc3net
+
+networks:
+  wc3net:
+    name: wc3net
+    driver: bridge
+
+volumes:
+  pvpgn-var:
+  wc3-maps:
+  aura-config:

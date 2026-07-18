@@ -1,0 +1,34 @@
+# aura-bot config template.
+# entrypoint.sh renders this to config.ini with envsubst at container start.
+# Only keys that differ from the upstream defaults (config-example.ini) are set.
+# Key names verified against Slayer95/aura-bot CONFIG.md / config-example.ini.
+
+### Realm: your private PvPGN server, reached in-container by service name.
+realm_1.host_name = ${AURA_REALM_HOST}
+realm_1.unique_name = ${AURA_REALM_NAME}
+realm_1.username = ${AURA_REALM_USERNAME}
+realm_1.password = ${AURA_REALM_PASSWORD}
+realm_1.auto_register = yes
+realm_1.first_channel = W3
+
+### Bot identity + game version. MUST match the version players actually run
+### (whatever the client installer + loader land on). Override via env.
+global_realm.username = ${AURA_REALM_USERNAME}
+global_realm.game_version = ${AURA_REALM_GAME_VERSION}
+global_realm.expansion = tft
+
+### Hosting: autohost TFT, in-lobby map transfer, auto map download.
+bot.maps_path = /var/lib/aura/maps/
+bot.jass_path = ${AURA_JASS_DIR}
+hosting.game_versions.main = ${AURA_REALM_GAME_VERSION}
+hosting.game_versions.expansion.default = tft
+hosting.map_downloads.enabled = yes
+hosting.map_downloads.repositories = epicwar,wc3maps
+hosting.map_transfers.mode = auto
+hosting.map_transfers.max_size = ${AURA_MAP_TRANSFER_MAX_SIZE}
+
+### Network: fixed host port for hosted games (forward this port to your host),
+### and advertise the public IP so external players can reach hosted lobbies.
+net.host_port.only = ${AURA_HOST_PORT}
+net.ipv4.public_address.algorithm = manual
+net.ipv4.public_address.value = ${AURA_PUBLIC_IP}
