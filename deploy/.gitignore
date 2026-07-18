@@ -1,3 +1,5 @@
 # Your real configuration + secrets never get committed.
 .env
 tls/
+# Your curated map library (.w3x/.w3m files) is data, not committed here.
+maps/

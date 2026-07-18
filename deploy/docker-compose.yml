@@ -111,6 +111,41 @@ services:
       - wc3net
 
   # ---------------------------------------------------------------------------
+  # wc3-mapd: read-only map library server. Built from the wc3-launcher repo
+  # (cmd/wc3-mapd), like wc3-relay. Serves your curated maps over HTTPS so every
+  # player's launcher syncs the same set and nobody waits on an in-game transfer.
+  # READ-ONLY: there is NO upload path - you curate the library by dropping vetted
+  # .w3x/.w3m files into WC3_MAPS_DIR on the host. Launchers sync over HTTPS, so
+  # set the TLS cert/key (reuse the relay's) for any real deployment.
+  # ---------------------------------------------------------------------------
+  wc3-mapd:
+    image: ${IMAGE_REGISTRY:-localhost/wc3}/wc3-mapd:${WC3_MAPD_TAG:-latest}
+    # Uncomment to build from a local wc3-launcher checkout beside this repo.
+    # build:
+    #   context: ${WC3_LAUNCHER_PATH:-../../wc3-launcher}
+    #   dockerfile: Dockerfile.mapd
+    container_name: wc3-mapd
+    restart: unless-stopped
+    # HTTPS port launchers sync the map library from. Forward this from your router.
+    ports:
+      - "${MAPD_PORT:-7443}:7443/tcp"
+    command:
+      - "-dir=/maps"
+      - "-addr=:7443"
+      # HTTPS: the mounted cert/key (reuse the relay's). Blank env = plaintext,
+      # fine for a local test, but launchers only sync over HTTPS.
+      - "-cert=${MAPD_TLS_CERT:-}"
+      - "-key=${MAPD_TLS_KEY:-}"
+    volumes:
+      # The curated map library as a host bind, mounted READ-ONLY: the server
+      # never writes to it and no client can. You add vetted maps from the host.
+      - "${WC3_MAPS_DIR:-./maps}:/maps:ro"
+      # TLS cert + key (reuse the relay's), read-only.
+      - "${RELAY_TLS_DIR:-./tls}:/tls:ro"
+    networks:
+      - wc3net
+
+  # ---------------------------------------------------------------------------
   # aura: autohost bot. Optional but recommended. Logs into pvpgn over the
   # internal network and hosts lobbies. Idles (does not crash) until you supply
   # game data, so it is safe to run before dropping in common.j + blizzard.j.
