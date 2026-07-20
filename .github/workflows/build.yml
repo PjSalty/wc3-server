@@ -1,19 +1,11 @@
 # .github/workflows/build.yml
-# Build the PvPGN and aura-bot images from their Dockerfiles.
+# Build the WC3: The Frozen Throne server images - the PvPGN realm plus the
+# native-host relay and map daemons - and publish them to this repo's GitHub
+# Container Registry (ghcr.io) on pushes to the default branch.
 #
-# By default this only BUILDS the images (no registry needed): every push and PR
-# compiles both from source to prove they still build. To also PUSH, set the
-# repository variable REGISTRY (Settings -> Secrets and variables -> Actions ->
-# Variables) to your registry namespace, e.g.:
-#   ghcr.io/YOUR_ORG        (GitHub Container Registry)
-#   docker.io/YOUR_USER     (Docker Hub)
-#   registry.example.com/games
-# and provide REGISTRY_USERNAME / REGISTRY_PASSWORD as Actions secrets. When
-# REGISTRY is set, images are pushed on pushes to the default branch only.
-#
-# Nothing here is provider-specific beyond GitHub Actions itself; the two
-# `docker build` invocations at the bottom of each job work on any runner.
-
+# On pull requests (and forks, which have no package-write token) it only
+# BUILDS each image, to prove it still compiles. Nothing here is provider
+# specific beyond GitHub Actions + GHCR; the Dockerfiles build on any runner.
 name: build
 
 on:
@@ -22,70 +14,50 @@ on:
   pull_request:
   workflow_dispatch:
 
-env:
-  # Registry namespace to tag/push into. Empty = build only, never push.
-  REGISTRY: ${{ vars.REGISTRY }}
-
 jobs:
-  pvpgn:
+  images:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: pvpgn
+            context: pvpgn/
+          - image: wc3-relay
+            context: relay/
+          - image: wc3-mapd
+            context: mapd/
     steps:
       - uses: actions/checkout@v4
 
       - uses: docker/setup-buildx-action@v3
 
-      # Log in only when a registry AND credentials are configured. Pushes to a
-      # PR from a fork have no secrets, so this is skipped there and the build
-      # still runs.
-      - name: Registry login
-        if: env.REGISTRY != '' && github.event_name != 'pull_request'
+      # GHCR image names must be lowercase; the owner can be mixed-case.
+      - name: Resolve registry namespace
+        id: ns
+        run: echo "ns=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      # Log in only on a real push to the default branch (PRs from forks have no
+      # write token); the built-in GITHUB_TOKEN publishes to this repo's GHCR.
+      - name: Log in to GHCR
+        if: github.event_name == 'push'
         uses: docker/login-action@v3
         with:
-          registry: ${{ vars.REGISTRY_HOST }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build (and push on main) pvpgn
+      - name: Build (and push on main) ${{ matrix.image }}
         uses: docker/build-push-action@v6
         with:
-          context: pvpgn/
+          context: ${{ matrix.context }}
           pull: true
-          push: ${{ env.REGISTRY != '' && github.ref == 'refs/heads/main' }}
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
           tags: |
-            ${{ env.REGISTRY != '' && format('{0}/pvpgn:{1}', env.REGISTRY, github.sha) || 'pvpgn:local' }}
-            ${{ env.REGISTRY != '' && format('{0}/pvpgn:latest', env.REGISTRY) || 'pvpgn:latest' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  aura:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Registry login
-        if: env.REGISTRY != '' && github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ vars.REGISTRY_HOST }}
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
-
-      - name: Build (and push on main) aura-bot
-        uses: docker/build-push-action@v6
-        with:
-          context: aura/
-          pull: true
-          push: ${{ env.REGISTRY != '' && github.ref == 'refs/heads/main' }}
-          tags: |
-            ${{ env.REGISTRY != '' && format('{0}/aura-bot:{1}', env.REGISTRY, github.sha) || 'aura-bot:local' }}
-            ${{ env.REGISTRY != '' && format('{0}/aura-bot:latest', env.REGISTRY) || 'aura-bot:latest' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ steps.ns.outputs.ns }}/${{ matrix.image }}:${{ github.sha }}
+            ${{ steps.ns.outputs.ns }}/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

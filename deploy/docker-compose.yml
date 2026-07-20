@@ -1,25 +1,21 @@
 # deploy/docker-compose.yml
 #
 # Warcraft III: The Frozen Throne (classic, NOT Reforged) private server.
-# Three locally-built or registry-pulled images composed together:
+# Three images composed together, all built from this repo (or pulled from a
+# registry you set IMAGE_REGISTRY to):
 #
 #   pvpgn      PvPGN-PRO realm: bnet login/chat/game-list (6112/tcp)
 #              plus the built-in w3route session relay (6200/tcp).
-#   wc3-relay  Native-host tunnel relay (from the separate wc3-launcher repo,
-#              cmd/wc3-relay). Lets a player host a game with zero router config:
-#              their launcher opens one outbound TLS tunnel to this relay, which
-#              allocates a public game port and proxies joiners to them.
-#   aura       Autohost bot (Slayer95/aura-bot). Logs into the realm and hosts
-#              lobbies for players who do not host their own.
+#   wc3-relay  Native-host tunnel relay (cmd/wc3-relay). Lets a player host a
+#              game with zero router config: their launcher opens one outbound
+#              TLS tunnel here, which allocates a public game port and proxies
+#              joiners to them. This replaces an autohost bot for player hosting.
+#   wc3-mapd   Read-only map library server (cmd/wc3-mapd): serves your curated
+#              maps over HTTPS so every player's launcher syncs the same set.
 #
 # EVERYTHING a deployer changes lives in .env (copy .env.example -> .env).
-# Nothing here contains a real hostname, IP, secret, or registry. Image tags
-# are pinned via env, never :latest. Secrets (BOT_PASSWORD, RELAY_TOKEN) come
-# from the environment / your secret store, never committed.
-#
-# Legal: this repo ships only open-source server code. You must supply your own
-# Warcraft III game data (common.j + blizzard.j from your own install) to enable
-# aura map hosting. No Blizzard binaries are distributed here.
+# Nothing here contains a real hostname, IP, secret, or registry. Image tags are
+# pinned via env. Secrets (RELAY_TOKEN) come from your secret store, never committed.
 name: wc3-server
 
 services:
@@ -36,7 +32,6 @@ services:
     restart: unless-stopped
     # 6112/tcp = bnetd client port (login, chat, game list).
     # 6200/tcp = w3route session relay (pvpgn's own game-session relay).
-    # Both are TCP; the legacy bnet UDP test port is not needed.
     ports:
       - "${PVPGN_BNET_PORT:-6112}:6112/tcp"
       - "${PVPGN_W3ROUTE_PORT:-6200}:6200/tcp"
@@ -57,20 +52,14 @@ services:
       - wc3net
 
   # ---------------------------------------------------------------------------
-  # wc3-relay: native-host tunnel relay. Built from the separate wc3-launcher
-  # repo (cmd/wc3-relay), NOT from this repo. Two ways to supply the image:
-  #   1. Pull one you pushed:  set IMAGE_REGISTRY and WC3_RELAY_TAG.
-  #   2. Build it yourself:    clone the wc3-launcher repo, build cmd/wc3-relay
-  #      into an image, and tag it to match the image: line below (or point the
-  #      commented build context at your local checkout).
+  # wc3-relay: native-host tunnel relay (built from ./relay). A host launcher
+  # opens ONE outbound TLS tunnel here; the relay allocates a public game port
+  # and proxies joiners, so nobody port-forwards their own game port.
   # ---------------------------------------------------------------------------
   wc3-relay:
     image: ${IMAGE_REGISTRY:-localhost/wc3}/wc3-relay:${WC3_RELAY_TAG:-latest}
-    # Uncomment to build from a local wc3-launcher checkout beside this repo.
-    # The relay Dockerfile lives in that repo, not here.
-    # build:
-    #   context: ${WC3_LAUNCHER_PATH:-../../wc3-launcher}
-    #   dockerfile: Dockerfile.relay
+    build:
+      context: ../relay
     container_name: wc3-relay
     restart: unless-stopped
     depends_on:
@@ -79,8 +68,7 @@ services:
     # Tunnel port: host launchers open ONE outbound (TLS) connection here.
     # Game-port pool: the public ports the relay hands out to hosted games.
     # BOTH must be forwarded from your router to this host, and the pool range
-    # must match RELAY_POOL_LO..RELAY_POOL_HI below. Keep the pool distinct from
-    # pvpgn's 6200 w3route port.
+    # must match RELAY_POOL_LO..RELAY_POOL_HI below.
     ports:
       - "${RELAY_TUNNEL_PORT:-7000}:7000/tcp"
       - "${RELAY_POOL_LO:-6300}-${RELAY_POOL_HI:-6399}:${RELAY_POOL_LO:-6300}-${RELAY_POOL_HI:-6399}/tcp"
@@ -96,34 +84,27 @@ services:
       # Set RELAY_REQUIRE_AUTH=1 to actually reject launchers without it.
       RELAY_TOKEN: "${RELAY_TOKEN:-}"
       RELAY_REQUIRE_AUTH: "${RELAY_REQUIRE_AUTH:-0}"
-      # TLS on the tunnel port. Point these at the mounted cert/key (see the
-      # volume below). Leave empty to run plaintext during initial rollout.
+      # TLS on the tunnel port. Point these at the mounted cert/key (volume below).
       # Set RELAY_REQUIRE_TLS=1 to reject plaintext tunnels once TLS is live.
       RELAY_TLS_CERT: "${RELAY_TLS_CERT:-}"
       RELAY_TLS_KEY: "${RELAY_TLS_KEY:-}"
       RELAY_REQUIRE_TLS: "${RELAY_REQUIRE_TLS:-0}"
     volumes:
       # Host dir holding the relay's TLS cert + key, mounted read-only. Set
-      # RELAY_TLS_CERT / RELAY_TLS_KEY to the in-container paths, e.g.
-      # /tls/fullchain.pem and /tls/privkey.pem.
+      # RELAY_TLS_CERT / RELAY_TLS_KEY to the in-container paths.
       - "${RELAY_TLS_DIR:-./tls}:/tls:ro"
     networks:
       - wc3net
 
   # ---------------------------------------------------------------------------
-  # wc3-mapd: read-only map library server. Built from the wc3-launcher repo
-  # (cmd/wc3-mapd), like wc3-relay. Serves your curated maps over HTTPS so every
-  # player's launcher syncs the same set and nobody waits on an in-game transfer.
-  # READ-ONLY: there is NO upload path - you curate the library by dropping vetted
-  # .w3x/.w3m files into WC3_MAPS_DIR on the host. Launchers sync over HTTPS, so
-  # set the TLS cert/key (reuse the relay's) for any real deployment.
+  # wc3-mapd: read-only map library server (built from ./mapd). Serves your
+  # curated maps over HTTPS so every player's launcher syncs the same set. There
+  # is NO upload path - you curate by dropping vetted .w3x/.w3m into WC3_MAPS_DIR.
   # ---------------------------------------------------------------------------
   wc3-mapd:
     image: ${IMAGE_REGISTRY:-localhost/wc3}/wc3-mapd:${WC3_MAPD_TAG:-latest}
-    # Uncomment to build from a local wc3-launcher checkout beside this repo.
-    # build:
-    #   context: ${WC3_LAUNCHER_PATH:-../../wc3-launcher}
-    #   dockerfile: Dockerfile.mapd
+    build:
+      context: ../mapd
     container_name: wc3-mapd
     restart: unless-stopped
     # HTTPS port launchers sync the map library from. Forward this from your router.
@@ -132,60 +113,15 @@ services:
     command:
       - "-dir=/maps"
       - "-addr=:7443"
-      # HTTPS: the mounted cert/key (reuse the relay's). Blank env = plaintext,
-      # fine for a local test, but launchers only sync over HTTPS.
+      # HTTPS: the mounted cert/key (reuse the relay's). Blank = plaintext, fine
+      # for a local test, but launchers only sync over HTTPS.
       - "-cert=${MAPD_TLS_CERT:-}"
       - "-key=${MAPD_TLS_KEY:-}"
     volumes:
-      # The curated map library as a host bind, mounted READ-ONLY: the server
-      # never writes to it and no client can. You add vetted maps from the host.
+      # The curated map library as a host bind, mounted READ-ONLY.
       - "${WC3_MAPS_DIR:-./maps}:/maps:ro"
       # TLS cert + key (reuse the relay's), read-only.
       - "${RELAY_TLS_DIR:-./tls}:/tls:ro"
-    networks:
-      - wc3net
-
-  # ---------------------------------------------------------------------------
-  # aura: autohost bot. Optional but recommended. Logs into pvpgn over the
-  # internal network and hosts lobbies. Idles (does not crash) until you supply
-  # game data, so it is safe to run before dropping in common.j + blizzard.j.
-  # ---------------------------------------------------------------------------
-  aura:
-    image: ${IMAGE_REGISTRY:-localhost/wc3}/aura-bot:${AURA_TAG:-latest}
-    build:
-      context: ../aura
-    container_name: wc3-aura
-    restart: unless-stopped
-    depends_on:
-      pvpgn:
-        condition: service_started
-    # aura's own fixed host port for the lobbies it hosts. Forward this too.
-    ports:
-      - "${AURA_HOST_PORT:-6113}:6113/tcp"
-    environment:
-      # The realm aura logs into: the pvpgn service on the internal bridge.
-      AURA_REALM_HOST: "pvpgn"
-      AURA_REALM_PORT: "6112"
-      # Display name of the realm as shown by the bot. Parameterized.
-      AURA_REALM_NAME: "${REALM_NAME:-My WC3 Realm}"
-      AURA_REALM_USERNAME: "${BOT_USERNAME:?set BOT_USERNAME in .env}"
-      AURA_REALM_PASSWORD: "${BOT_PASSWORD:?set BOT_PASSWORD via env/secret store}"
-      AURA_REALM_GAME_VERSION: "${WC3_GAME_VERSION:-1.27}"
-      # Public IP so hosted games advertise a reachable address to players.
-      AURA_PUBLIC_IP: "${PUBLIC_IP:?set PUBLIC_IP in .env}"
-      # In-lobby map transfer ceiling in KB (upstream default 8192).
-      AURA_MAP_TRANSFER_MAX_SIZE: "${AURA_MAP_TRANSFER_MAX_SIZE:-131072}"
-      # JASS dir the bot watches for user-supplied game data.
-      AURA_JASS_DIR: "/var/lib/aura/jass"
-    volumes:
-      # Map library: drop .w3x/.w3m here; auto-downloads also land here.
-      - wc3-maps:/var/lib/aura/maps
-      # Persisted bot config/state.
-      - aura-config:/var/lib/aura/config
-      # YOUR Warcraft III game data (common.j + blizzard.j) enables hosting.
-      # Extract them from your own WC3 install (War3x.mpq -> Scripts/) and drop
-      # them into this host dir. Never redistributed by this repo.
-      - "${WC3_JASS_DIR:-./jass}:/var/lib/aura/jass"
     networks:
       - wc3net
 
@@ -196,5 +132,3 @@ networks:
 
 volumes:
   pvpgn-var:
-  wc3-maps:
-  aura-config:

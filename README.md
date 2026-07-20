@@ -6,10 +6,10 @@ together over the internet:
 
 - **pvpgn** - a Battle.net realm (login, chat, custom-game list) via PvPGN-PRO.
 - **wc3-relay** - a native-host tunnel relay so a player can host a Create Game
-  with no router config. Built from the separate
-  [wc3-launcher](https://github.com/PjSalty/wc3-launcher) repo (`cmd/wc3-relay`).
-- **aura** - an autohost bot that hosts lobbies for players who do not host their
-  own.
+  with no router config: their launcher opens one outbound tunnel and the relay
+  proxies joiners to them. Built here from `cmd/wc3-relay`.
+- **wc3-mapd** - a read-only map library server so every player's launcher syncs
+  the same curated maps on startup. Built here from `cmd/wc3-mapd`.
 
 Everything is configured from a single `.env` file. Nothing in this repo contains
 a real server address, IP, secret, or registry: you supply those.
@@ -19,7 +19,7 @@ a real server address, IP, secret, or registry: you supply those.
 ```bash
 cd deploy
 cp .env.example .env
-# edit .env: at minimum set PUBLIC_IP, REALM_NAME, BOT_USERNAME, BOT_PASSWORD
+# edit .env: at minimum set PUBLIC_IP, REALM_NAME, RELAY_TOKEN
 docker compose up -d --build
 ```
 
@@ -31,12 +31,14 @@ your server. Full instructions in **[deploy/README.md](deploy/README.md)**.
 
 - A host with a public IP (a small VPS is plenty) and the ability to forward
   ports on your router or firewall.
-- Your own Warcraft III game data (`common.j` + `blizzard.j` from your own
-  install) if you want aura to host maps. This repo ships **no Blizzard files**;
-  see [NOTICE](NOTICE).
+- Curated maps: drop your own vetted `.w3x`/`.w3m` files into the map library
+  and every player's launcher syncs them.
+
+Players need their own copy of Warcraft III; this repo ships **no Blizzard
+files** and distributes no game data. See [NOTICE](NOTICE).
 
 ## Legal
 
-Open-source glue that builds PvPGN-PRO and aura-bot from their own upstream
-sources and distributes no Blizzard binaries or game data. You must own Warcraft
-III and supply your own game data. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Open-source glue that builds PvPGN-PRO from upstream source and the relay and map
+daemons from `cmd/`, and distributes no Blizzard binaries or game data. You must
+own Warcraft III. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
