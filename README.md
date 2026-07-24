@@ -39,6 +39,8 @@ files** and distributes no game data. See [NOTICE](NOTICE).
 
 ## Legal
 
-Open-source glue that builds PvPGN-PRO from upstream source and the relay and map
-daemons from `cmd/`, and distributes no Blizzard binaries or game data. You must
-own Warcraft III. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+Open-source glue that builds PvPGN-PRO from a hardened fork (GPL-2.0, source at
+[PjSalty/pvpgn-pro-hardened](https://github.com/PjSalty/pvpgn-pro-hardened)) and
+the relay and map daemons from `cmd/`, and distributes no Blizzard binaries or
+game data. You must own Warcraft III. See [LICENSE](LICENSE) and
+[NOTICE](NOTICE).

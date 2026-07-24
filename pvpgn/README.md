@@ -5,16 +5,24 @@ realm. Players log in through the classic WC3 client, see each other in
 channels, and host custom games. This realm is private: it never announces to
 any public tracker.
 
+- Source: [github.com/PjSalty/pvpgn-pro-hardened](https://github.com/PjSalty/pvpgn-pro-hardened) `v0.1.1`, a
+  security-hardened fork of PvPGN-PRO, GPL-2.0
 - Upstream: [github.com/pvpgn/pvpgn-server](https://github.com/pvpgn/pvpgn-server), GPL-2.0
-- Pinned release: `1.99.7.2.1` (2018-07-15), the latest stable tag
 - Base image: `debian:13-slim` (Trixie)
 - Storage: plain-file backend (no database)
+
+`bnetd` parses untrusted packets straight off the internet, so the build uses the
+hardened fork: modern compiler mitigations (FORTIFY_SOURCE=3, stack protector,
+full RELRO, CET, PIE) plus fixes for memory-safety bugs found by fuzzing the
+bnet/w3route parsers. A memory-safety bug becomes a crash the container restarts
+rather than remote code execution. It is a drop-in for stock PvPGN-PRO: same
+`bnetd`, same config, same 6112/6200 ports, same behaviour.
 
 ## What's here
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | multi-stage build: compiles pvpgn from the pinned tag, ships a slim runtime |
+| `Dockerfile` | multi-stage build: compiles the hardened pvpgn source, verifies the mitigations, ships a slim runtime |
 | `conf/bnetd.conf.overrides` | the handful of `key = value` settings a private WC3 realm pins |
 | `conf/address_translation.conf.example` | documents the split-horizon NAT format (the entrypoint generates the real file) |
 | `entrypoint.sh` | applies the overlay, wires NAT for the w3route port, runs `bnetd -f` |
@@ -24,12 +32,14 @@ any public tracker.
 Build the image locally:
 
 ```bash
-docker build -t pvpgn-wc3:1.99.7.2.1 pvpgn/
+docker build -t pvpgn-wc3:v0.1.1 pvpgn/
 ```
 
-The build clones the pinned tag, runs the upstream-documented
-`cmake -D CMAKE_INSTALL_PREFIX=/usr/local/pvpgn -D WITH_LUA=true`, then
-`make` / `make install`. The result lands at:
+The build clones the pinned tag, runs the documented
+`cmake -D CMAKE_INSTALL_PREFIX=/usr/local/pvpgn -D PVPGN_HARDENING=ON -D WITH_LUA=true`,
+then `make` / `make install`, and finally runs `test/checksec.sh` against the
+built binary: if any mitigation is missing the image build fails, so an
+unhardened `bnetd` can never ship. The result lands at:
 
 - `sbin/bnetd` the server binary
 - `etc/pvpgn/*.conf` config (bnetd expands `${SYSCONFDIR}` / `${LOCALSTATEDIR}` at runtime)
@@ -46,7 +56,7 @@ docker run -d --name pvpgn \
   -p 6200:6200/tcp \
   -e PVPGN_PUBLIC_IP=203.0.113.10 \
   -v pvpgn-data:/usr/local/pvpgn/var/pvpgn \
-  pvpgn-wc3:1.99.7.2.1
+  pvpgn-wc3:v0.1.1
 ```
 
 Replace `203.0.113.10` (an RFC-5737 documentation address) with your own
@@ -120,6 +130,6 @@ host and start it the same way the entrypoint does:
 To hand off a tarball instead of a registry image:
 
 ```bash
-docker create --name pvpgn-export pvpgn-wc3:1.99.7.2.1
-docker export pvpgn-export -o pvpgn-wc3-1.99.7.2.1.tar
+docker create --name pvpgn-export pvpgn-wc3:v0.1.1
+docker export pvpgn-export -o pvpgn-wc3-v0.1.1.tar
 ```
