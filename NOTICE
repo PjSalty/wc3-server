@@ -6,8 +6,11 @@ software. The glue is licensed under the MIT License (see LICENSE). The software
 it builds carries its own licenses:
 
 - PvPGN-PRO (the Battle.net realm) is licensed under the GNU General Public
-  License v2.0. This repo builds it from upstream source; it does not modify or
-  redistribute PvPGN binaries.
+  License v2.0. This repo builds it from a modified fork,
+  github.com/PjSalty/pvpgn-pro-hardened (build hardening plus fixes to the
+  packet and tag parsers); that modified source is published there under the
+  same license. The container image this repo publishes therefore contains a
+  compiled, modified PvPGN, and the corresponding source is the fork.
 - The wc3-relay and wc3-mapd daemons are built here from cmd/wc3-relay and
   cmd/wc3-mapd (Go source shared with the wc3-launcher client) under their own
   license.

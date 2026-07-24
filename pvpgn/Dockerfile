@@ -1,16 +1,41 @@
 # pvpgn/Dockerfile
 # PvPGN-PRO Battle.net emulator for a private Warcraft III: The Frozen Throne
-# realm. Multi-stage: compile the pinned 1.99.7.2.1 source, then ship a slim
+# realm. Multi-stage: compile the hardened PvPGN-PRO source, then ship a slim
 # runtime. Base pinned to Debian 13 (Trixie).
+#
+# The source is pvpgn-pro-hardened, a security-hardened fork of PvPGN-PRO. It
+# adds the modern compiler mitigations (FORTIFY_SOURCE=3, stack protector, full
+# RELRO, CET, PIE) and fixes memory-safety bugs in the bnet/w3route packet
+# parsers and on the message and MOTD paths. bnetd parses untrusted network
+# input straight off the internet, which is exactly where that pays off: a
+# memory-safety bug should abort rather than become an exploit primitive.
+#
+# Two things change relative to a stock 1.99.7.2.1 build, and only one of them is
+# the hardening. The fork's base is upstream master (fcdf00f), which is also
+# upstream's current HEAD, so this also carries the upstream commits made after
+# that 2018 release. The realm-facing contract is unchanged: same bnetd, same
+# config overlay, same 6112/6200 ports, and the WC3 versioncheck data (WAR3 and
+# W3XP, including 1.28.5) is byte-identical between the two bases, so clients
+# authenticate exactly as before.
+#
+# Rollback, three ways, cheapest first: roll the deployed image tag back to a
+# previously published build; rebuild this same source with
+# -D PVPGN_HARDENING=OFF (and drop the checksec gate) to isolate the hardening;
+# or clone github.com/pvpgn/pvpgn-server at tag 1.99.7.2.1 to restore the
+# previously deployed bits exactly, which also reverts those upstream commits.
 
 # ---- build stage ----------------------------------------------------------
 FROM debian:13-slim AS build
 
-# Pinned upstream release tag (github.com/pvpgn/pvpgn-server). No 'v' prefix.
-ARG PVPGN_VERSION=1.99.7.2.1
+# Pinned hardened-fork release (github.com/PjSalty/pvpgn-pro-hardened). The tag
+# is for readability; the commit is the actual pin, asserted after the clone so a
+# moved or re-pointed tag fails the build instead of silently changing the source.
+ARG PVPGN_HARDENED_REF=v0.1.2
+ARG PVPGN_HARDENED_SHA=53208d1bab4505adac79adcefdfe1fe33b9551af
 
 # Build toolchain + PvPGN deps: zlib and Lua 5.1 (WITH_LUA). No MySQL/SQLite --
 # a private realm uses the plain-file storage backend (the bnetd default).
+# binutils + checksec back the mitigation gate below.
 RUN apt-get update \
  && apt-get install --no-install-recommends -y \
       build-essential \
@@ -19,30 +44,41 @@ RUN apt-get update \
       ca-certificates \
       zlib1g-dev \
       liblua5.1-0-dev \
+      binutils \
+      checksec \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
-RUN git clone --depth 1 --branch "${PVPGN_VERSION}" \
-      https://github.com/pvpgn/pvpgn-server.git .
+RUN git clone --depth 1 --branch "${PVPGN_HARDENED_REF}" \
+      https://github.com/PjSalty/pvpgn-pro-hardened.git . \
+ && test "$(git rev-parse HEAD)" = "${PVPGN_HARDENED_SHA}"
 
 # Upstream-documented invocation: install prefix + WITH_LUA (README).
-# CMAKE_POLICY_VERSION_MINIMUM lets this 2018-era CMake project configure under
-# the much newer CMake in Trixie without the legacy-minimum deprecation erroring.
+# PVPGN_HARDENING is the fork's mitigation switch (on by default); it is passed
+# explicitly so the intent is visible here. CMAKE_POLICY_VERSION_MINIMUM lets
+# this legacy CMake project configure under the much newer CMake in Trixie
+# without the legacy-minimum deprecation erroring.
 RUN cmake -S . -B build \
       -D CMAKE_BUILD_TYPE=Release \
       -D CMAKE_INSTALL_PREFIX=/usr/local/pvpgn \
       -D CMAKE_POLICY_VERSION_MINIMUM=3.5 \
+      -D PVPGN_HARDENING=ON \
       -D WITH_LUA=true \
  && cmake --build build -j "$(nproc)" \
  && cmake --install build
+
+# Fail the image build if the mitigations did not actually land in the binary,
+# so a silently-unhardened bnetd can never reach the realm. Checks full RELRO,
+# stack canary, PIE, non-exec stack, FORTIFY, and the x86 CET property note.
+RUN bash test/checksec.sh /usr/local/pvpgn/sbin/bnetd
 
 # ---- runtime stage --------------------------------------------------------
 FROM debian:13-slim AS runtime
 
 LABEL org.opencontainers.image.title="pvpgn-wc3" \
-      org.opencontainers.image.description="PvPGN-PRO private Battle.net server for Warcraft III: TFT" \
-      org.opencontainers.image.version="1.99.7.2.1" \
-      org.opencontainers.image.source="https://github.com/pvpgn/pvpgn-server"
+      org.opencontainers.image.description="Hardened PvPGN-PRO private Battle.net server for Warcraft III: TFT" \
+      org.opencontainers.image.version="v0.1.2" \
+      org.opencontainers.image.source="https://github.com/PjSalty/pvpgn-pro-hardened"
 
 # Runtime shared libs only: zlib, Lua 5.1, C++ runtime.
 RUN apt-get update \
