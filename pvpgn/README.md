@@ -5,7 +5,7 @@ realm. Players log in through the classic WC3 client, see each other in
 channels, and host custom games. This realm is private: it never announces to
 any public tracker.
 
-- Source: [github.com/PjSalty/pvpgn-pro-hardened](https://github.com/PjSalty/pvpgn-pro-hardened) `v0.1.1`, a
+- Source: [github.com/PjSalty/pvpgn-pro-hardened](https://github.com/PjSalty/pvpgn-pro-hardened) `v0.1.2`, a
   security-hardened fork of PvPGN-PRO, GPL-2.0
 - Upstream: [github.com/pvpgn/pvpgn-server](https://github.com/pvpgn/pvpgn-server), GPL-2.0
 - Base image: `debian:13-slim` (Trixie)
@@ -13,10 +13,18 @@ any public tracker.
 
 `bnetd` parses untrusted packets straight off the internet, so the build uses the
 hardened fork: modern compiler mitigations (FORTIFY_SOURCE=3, stack protector,
-full RELRO, CET, PIE) plus fixes for memory-safety bugs found by fuzzing the
-bnet/w3route parsers. A memory-safety bug becomes a crash the container restarts
-rather than remote code execution. It is a drop-in for stock PvPGN-PRO: same
-`bnetd`, same config, same 6112/6200 ports, same behaviour.
+full RELRO, CET, PIE) plus fixes for memory-safety bugs in the bnet/w3route
+packet parsers and on the message and MOTD paths. The mitigations aim to make a
+memory-safety bug abort rather than become an exploit primitive; they raise the
+cost of exploitation, they do not make the daemon memory-safe.
+
+Two things change relative to a stock `1.99.7.2.1` build, and only one is the
+hardening: the fork's base is upstream `master` (`fcdf00f`, also upstream's
+current HEAD), so this build also carries the upstream commits made after that
+2018 release. The realm-facing contract is unchanged: same `bnetd`, same config
+overlay, same 6112/6200 ports, and the WC3 versioncheck data (WAR3 and W3XP,
+including 1.28.5) is byte-identical between the two bases, so clients
+authenticate exactly as before.
 
 ## What's here
 
@@ -32,7 +40,7 @@ rather than remote code execution. It is a drop-in for stock PvPGN-PRO: same
 Build the image locally:
 
 ```bash
-docker build -t pvpgn-wc3:v0.1.1 pvpgn/
+docker build -t pvpgn-wc3:v0.1.2 pvpgn/
 ```
 
 The build clones the pinned tag, runs the documented
@@ -56,7 +64,7 @@ docker run -d --name pvpgn \
   -p 6200:6200/tcp \
   -e PVPGN_PUBLIC_IP=203.0.113.10 \
   -v pvpgn-data:/usr/local/pvpgn/var/pvpgn \
-  pvpgn-wc3:v0.1.1
+  pvpgn-wc3:v0.1.2
 ```
 
 Replace `203.0.113.10` (an RFC-5737 documentation address) with your own
@@ -130,6 +138,6 @@ host and start it the same way the entrypoint does:
 To hand off a tarball instead of a registry image:
 
 ```bash
-docker create --name pvpgn-export pvpgn-wc3:v0.1.1
-docker export pvpgn-export -o pvpgn-wc3-v0.1.1.tar
+docker create --name pvpgn-export pvpgn-wc3:v0.1.2
+docker export pvpgn-export -o pvpgn-wc3-v0.1.2.tar
 ```

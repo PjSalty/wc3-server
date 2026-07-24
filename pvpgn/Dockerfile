@@ -3,22 +3,26 @@
 # realm. Multi-stage: compile the hardened PvPGN-PRO source, then ship a slim
 # runtime. Base pinned to Debian 13 (Trixie).
 #
-# The source is pvpgn-pro-hardened, a security-hardened fork of PvPGN-PRO that
-# tracks upstream and adds the modern compiler mitigations (FORTIFY_SOURCE=3,
-# stack protector, full RELRO, CET, PIE) plus fixes for memory-safety bugs found
-# by fuzzing the bnet/w3route packet parsers. It is a drop-in for stock
-# PvPGN-PRO: same bnetd, same config, same 6112/6200 ports, same behaviour, so
-# only the build changes. bnetd parses untrusted network input straight off the
-# internet, which is exactly where those mitigations pay off: a memory-safety
-# bug becomes a crash the container restarts, not remote code execution.
+# The source is pvpgn-pro-hardened, a security-hardened fork of PvPGN-PRO. It
+# adds the modern compiler mitigations (FORTIFY_SOURCE=3, stack protector, full
+# RELRO, CET, PIE) and fixes memory-safety bugs in the bnet/w3route packet
+# parsers and on the message and MOTD paths. bnetd parses untrusted network
+# input straight off the internet, which is exactly where that pays off: a
+# memory-safety bug should abort rather than become an exploit primitive.
 #
-# The fork's base is upstream master (fcdf00f), which is also upstream's current
-# HEAD, so this carries the upstream commits made after the last tagged release.
+# Two things change relative to a stock 1.99.7.2.1 build, and only one of them is
+# the hardening. The fork's base is upstream master (fcdf00f), which is also
+# upstream's current HEAD, so this also carries the upstream commits made after
+# that 2018 release. The realm-facing contract is unchanged: same bnetd, same
+# config overlay, same 6112/6200 ports, and the WC3 versioncheck data (WAR3 and
+# W3XP, including 1.28.5) is byte-identical between the two bases, so clients
+# authenticate exactly as before.
 #
-# Rollback, two ways: to isolate the hardening, rebuild this same source with
-# -D PVPGN_HARDENING=OFF and drop the checksec gate; to restore the previously
-# deployed bits exactly, clone github.com/pvpgn/pvpgn-server at tag 1.99.7.2.1.
-# For the running realm, rolling the deployed image tag back is the fast path.
+# Rollback, three ways, cheapest first: roll the deployed image tag back to a
+# previously published build; rebuild this same source with
+# -D PVPGN_HARDENING=OFF (and drop the checksec gate) to isolate the hardening;
+# or clone github.com/pvpgn/pvpgn-server at tag 1.99.7.2.1 to restore the
+# previously deployed bits exactly, which also reverts those upstream commits.
 
 # ---- build stage ----------------------------------------------------------
 FROM debian:13-slim AS build
@@ -26,8 +30,8 @@ FROM debian:13-slim AS build
 # Pinned hardened-fork release (github.com/PjSalty/pvpgn-pro-hardened). The tag
 # is for readability; the commit is the actual pin, asserted after the clone so a
 # moved or re-pointed tag fails the build instead of silently changing the source.
-ARG PVPGN_HARDENED_REF=v0.1.1
-ARG PVPGN_HARDENED_SHA=242e8465d21cc97643442f0b864f9df482e55709
+ARG PVPGN_HARDENED_REF=v0.1.2
+ARG PVPGN_HARDENED_SHA=53208d1bab4505adac79adcefdfe1fe33b9551af
 
 # Build toolchain + PvPGN deps: zlib and Lua 5.1 (WITH_LUA). No MySQL/SQLite --
 # a private realm uses the plain-file storage backend (the bnetd default).
@@ -73,7 +77,7 @@ FROM debian:13-slim AS runtime
 
 LABEL org.opencontainers.image.title="pvpgn-wc3" \
       org.opencontainers.image.description="Hardened PvPGN-PRO private Battle.net server for Warcraft III: TFT" \
-      org.opencontainers.image.version="v0.1.1" \
+      org.opencontainers.image.version="v0.1.2" \
       org.opencontainers.image.source="https://github.com/PjSalty/pvpgn-pro-hardened"
 
 # Runtime shared libs only: zlib, Lua 5.1, C++ runtime.
