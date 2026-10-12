@@ -5,7 +5,7 @@ realm. Players log in through the classic WC3 client, see each other in
 channels, and host custom games. This realm is private: it never announces to
 any public tracker.
 
-- Source: [github.com/PjSalty/pvpgn-pro-hardened](https://github.com/PjSalty/pvpgn-pro-hardened) `v0.1.2`, a
+- Source: [github.com/PjSalty/pvpgn-pro-hardened](https://github.com/PjSalty/pvpgn-pro-hardened) `v0.1.3`, a
   security-hardened fork of PvPGN-PRO, GPL-2.0
 - Upstream: [github.com/pvpgn/pvpgn-server](https://github.com/pvpgn/pvpgn-server), GPL-2.0
 - Base image: `debian:13-slim` (Trixie)
@@ -40,7 +40,7 @@ authenticate exactly as before.
 Build the image locally:
 
 ```bash
-docker build -t pvpgn-wc3:v0.1.2 pvpgn/
+docker build -t pvpgn-wc3:v0.1.3 pvpgn/
 ```
 
 The build clones the pinned tag, runs the documented
@@ -64,7 +64,7 @@ docker run -d --name pvpgn \
   -p 6200:6200/tcp \
   -e PVPGN_PUBLIC_IP=203.0.113.10 \
   -v pvpgn-data:/usr/local/pvpgn/var/pvpgn \
-  pvpgn-wc3:v0.1.2
+  pvpgn-wc3:v0.1.3
 ```
 
 Replace `203.0.113.10` (an RFC-5737 documentation address) with your own
@@ -141,6 +141,6 @@ host and start it the same way the entrypoint does:
 To hand off a tarball instead of a registry image:
 
 ```bash
-docker create --name pvpgn-export pvpgn-wc3:v0.1.2
-docker export pvpgn-export -o pvpgn-wc3-v0.1.2.tar
+docker create --name pvpgn-export pvpgn-wc3:v0.1.3
+docker export pvpgn-export -o pvpgn-wc3-v0.1.3.tar
 ```
