@@ -32,6 +32,13 @@ PVPGN_LOCAL_CIDR="${PVPGN_LOCAL_CIDR:-192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}"
 # ${LOCALSTATEDIR}/bnetd.log instead.
 PVPGN_LOG_STDOUT="${PVPGN_LOG_STDOUT:-true}"
 
+# The two overlay settings an operator changes without rebuilding. Empty keeps
+# the overlay's value (new_accounts = true, track = 0).
+#   PVPGN_NEW_ACCOUNTS  true|false  in-client account signup
+#   PVPGN_TRACK         seconds     tracker announce interval, 0 = never announce
+PVPGN_NEW_ACCOUNTS="${PVPGN_NEW_ACCOUNTS:-}"
+PVPGN_TRACK="${PVPGN_TRACK:-}"
+
 # =============================================================================
 # FUNCTIONS
 # =============================================================================
@@ -84,6 +91,28 @@ apply_overrides() {
     done < "${OVERRIDES_FILE}"
 }
 
+# Apply PVPGN_NEW_ACCOUNTS / PVPGN_TRACK over the overlay. Both are validated:
+# a typo must stop the container, not reach bnetd as a value it reads as "on".
+apply_env_settings() {
+    local conf="$1"
+    case "${PVPGN_NEW_ACCOUNTS}" in
+        "") ;;
+        true|false)
+            set_conf_key "${conf}" "new_accounts" "${PVPGN_NEW_ACCOUNTS}"
+            log "set new_accounts = ${PVPGN_NEW_ACCOUNTS} (PVPGN_NEW_ACCOUNTS)"
+            ;;
+        *) die "PVPGN_NEW_ACCOUNTS must be true or false, got '${PVPGN_NEW_ACCOUNTS}'" ;;
+    esac
+    case "${PVPGN_TRACK}" in
+        "") ;;
+        *[!0-9]*) die "PVPGN_TRACK must be a whole number of seconds (0 = never announce), got '${PVPGN_TRACK}'" ;;
+        *)
+            set_conf_key "${conf}" "track" "${PVPGN_TRACK}"
+            log "set track = ${PVPGN_TRACK} (PVPGN_TRACK)"
+            ;;
+    esac
+}
+
 # Point bnetd's transfile at a generated NAT mapping so remote clients receive
 # the public IP for the w3route port while LAN clients keep the internal one.
 configure_nat() {
@@ -125,6 +154,7 @@ main() {
     log "using config ${conf}"
 
     apply_overrides "${conf}"
+    apply_env_settings "${conf}"
 
     if [[ "${PVPGN_LOG_STDOUT}" == "true" ]]; then
         set_conf_key "${conf}" "logfile" "\"/dev/stdout\""
