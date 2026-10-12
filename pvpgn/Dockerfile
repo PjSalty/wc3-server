@@ -30,8 +30,8 @@ FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c
 # Pinned hardened-fork release (github.com/PjSalty/pvpgn-pro-hardened). The tag
 # is for readability; the commit is the actual pin, asserted after the clone so a
 # moved or re-pointed tag fails the build instead of silently changing the source.
-ARG PVPGN_HARDENED_REF=v0.1.2
-ARG PVPGN_HARDENED_SHA=53208d1bab4505adac79adcefdfe1fe33b9551af
+ARG PVPGN_HARDENED_REF=v0.1.3
+ARG PVPGN_HARDENED_SHA=e5653e3a03c4944bc343978b83275df7277ce7ee
 
 # Build toolchain + PvPGN deps: zlib and Lua 5.1 (WITH_LUA). No MySQL/SQLite --
 # a private realm uses the plain-file storage backend (the bnetd default).
@@ -77,7 +77,7 @@ FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c
 
 LABEL org.opencontainers.image.title="pvpgn-wc3" \
       org.opencontainers.image.description="Hardened PvPGN-PRO private Battle.net server for Warcraft III: TFT" \
-      org.opencontainers.image.version="v0.1.2" \
+      org.opencontainers.image.version="v0.1.3" \
       org.opencontainers.image.source="https://github.com/PjSalty/pvpgn-pro-hardened"
 
 # Runtime shared libs only: zlib, Lua 5.1, C++ runtime.
