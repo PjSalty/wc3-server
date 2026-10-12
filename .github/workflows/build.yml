@@ -81,6 +81,9 @@ jobs:
           context: ${{ matrix.context }}
           pull: true
           push: ${{ env.PUBLISH == 'true' }}
+          # Keep the pvpgn image on the runner when it is not being published,
+          # so the smoke test below has something to run.
+          load: ${{ env.PUBLISH != 'true' && matrix.image == 'pvpgn' }}
           tags: |
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ env.IMAGE }}:latest
@@ -88,6 +91,13 @@ jobs:
           sbom: false
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      # The sandbox in deploy/docker-compose.yml is only as good as the last time
+      # the image ran under it: a denied syscall leaves the daemon up and partly
+      # dead. Run the real compose service on every pull request.
+      - name: Smoke-test pvpgn under the compose sandbox
+        if: env.PUBLISH != 'true' && matrix.image == 'pvpgn'
+        run: pvpgn/smoke-test.sh "${IMAGE}:${GITHUB_SHA}"
 
       - name: Generate SBOM (SPDX JSON)
         if: env.PUBLISH == 'true'
