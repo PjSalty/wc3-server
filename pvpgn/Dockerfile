@@ -25,7 +25,7 @@
 # previously deployed bits exactly, which also reverts those upstream commits.
 
 # ---- build stage ----------------------------------------------------------
-FROM debian:13-slim AS build
+FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS build
 
 # Pinned hardened-fork release (github.com/PjSalty/pvpgn-pro-hardened). The tag
 # is for readability; the commit is the actual pin, asserted after the clone so a
@@ -73,7 +73,7 @@ RUN cmake -S . -B build \
 RUN bash test/checksec.sh /usr/local/pvpgn/sbin/bnetd
 
 # ---- runtime stage --------------------------------------------------------
-FROM debian:13-slim AS runtime
+FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS runtime
 
 LABEL org.opencontainers.image.title="pvpgn-wc3" \
       org.opencontainers.image.description="Hardened PvPGN-PRO private Battle.net server for Warcraft III: TFT" \
