@@ -30,6 +30,15 @@ services:
       context: ../pvpgn
     container_name: wc3-pvpgn
     restart: unless-stopped
+    # Contain the daemon: bnetd parses untrusted input straight off the
+    # internet. It binds high ports and runs non-root in the image, so it needs
+    # no capabilities, and the limits keep a flood or a bug from taking the host.
+    mem_limit: 256m
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # 6112/tcp = bnetd client port (login, chat, game list).
     # 6200/tcp = w3route session relay (pvpgn's own game-session relay).
     ports:
@@ -42,12 +51,19 @@ services:
       PVPGN_PUBLIC_IP: "${PUBLIC_IP:?set PUBLIC_IP in .env}"
       # Client networks that keep the internal address (RFC1918 by default).
       PVPGN_LOCAL_CIDR: "${PVPGN_LOCAL_CIDR:-192.168.0.0/16,10.0.0.0/8,172.16.0.0/12}"
-      # Private-realm hardening (baked defaults; override in .env only if needed):
-      PVPGN_NEW_ACCOUNTS: "${PVPGN_NEW_ACCOUNTS:-true}"   # in-client account signup
+      # Applied by the entrypoint over the baked overlay (override in .env):
+      PVPGN_NEW_ACCOUNTS: "${PVPGN_NEW_ACCOUNTS:-true}"   # false closes in-client account signup
       PVPGN_TRACK: "${PVPGN_TRACK:-0}"                    # 0 = never announce to public trackers
     volumes:
-      # Accounts, clan/channel state, logs; persists across image upgrades.
+      # Clan/channel state, logs; persists across image upgrades.
       - pvpgn-var:/usr/local/pvpgn/var
+      # The ACCOUNTS live here, and this second mount is not redundant. The image
+      # declares VOLUME /usr/local/pvpgn/var/pvpgn, which is deeper than the mount
+      # above, so without this Docker creates an anonymous volume at that path
+      # and the accounts land in it: unnamed, and gone with the first prune or
+      # recreate that does not carry it over. A named volume at the exact path
+      # stops Docker inventing one.
+      - pvpgn-accounts:/usr/local/pvpgn/var/pvpgn
     networks:
       - wc3net
 
@@ -62,6 +78,14 @@ services:
       context: ../relay
     container_name: wc3-relay
     restart: unless-stopped
+    # A static binary that writes nothing: read-only root, no capabilities.
+    read_only: true
+    mem_limit: 256m
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       pvpgn:
         condition: service_started
@@ -80,15 +104,16 @@ services:
       - "-pool-lo=${RELAY_POOL_LO:-6300}"
       - "-pool-hi=${RELAY_POOL_HI:-6399}"
     environment:
-      # Shared tunnel token launchers must present. Empty = token gate OFF.
-      # Set RELAY_REQUIRE_AUTH=1 to actually reject launchers without it.
+      # Shared tunnel token launchers must present. The gate is ON by default
+      # and the relay refuses to start without a token; RELAY_REQUIRE_AUTH=0
+      # turns the gate off on purpose.
       RELAY_TOKEN: "${RELAY_TOKEN:-}"
-      RELAY_REQUIRE_AUTH: "${RELAY_REQUIRE_AUTH:-0}"
-      # TLS on the tunnel port. Point these at the mounted cert/key (volume below).
-      # Set RELAY_REQUIRE_TLS=1 to reject plaintext tunnels once TLS is live.
+      RELAY_REQUIRE_AUTH: "${RELAY_REQUIRE_AUTH:-1}"
+      # TLS on the tunnel port, from the mounted cert/key (volume below). Required
+      # by default; RELAY_REQUIRE_TLS=0 also accepts plaintext tunnels.
       RELAY_TLS_CERT: "${RELAY_TLS_CERT:-}"
       RELAY_TLS_KEY: "${RELAY_TLS_KEY:-}"
-      RELAY_REQUIRE_TLS: "${RELAY_REQUIRE_TLS:-0}"
+      RELAY_REQUIRE_TLS: "${RELAY_REQUIRE_TLS:-1}"
     volumes:
       # Host dir holding the relay's TLS cert + key, mounted read-only. Set
       # RELAY_TLS_CERT / RELAY_TLS_KEY to the in-container paths.
@@ -107,14 +132,22 @@ services:
       context: ../mapd
     container_name: wc3-mapd
     restart: unless-stopped
+    # Serves files and writes nothing: read-only root, no capabilities.
+    read_only: true
+    mem_limit: 128m
+    pids_limit: 128
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     # HTTPS port launchers sync the map library from. Forward this from your router.
     ports:
       - "${MAPD_PORT:-7443}:7443/tcp"
     command:
       - "-dir=/maps"
       - "-addr=:7443"
-      # HTTPS: the mounted cert/key (reuse the relay's). Blank = plaintext, fine
-      # for a local test, but launchers only sync over HTTPS.
+      # HTTPS: the mounted cert/key (reuse the relay's). Launchers only sync
+      # over HTTPS, so these are required for the library to be of any use.
       - "-cert=${MAPD_TLS_CERT:-}"
       - "-key=${MAPD_TLS_KEY:-}"
     volumes:
@@ -132,3 +165,4 @@ networks:
 
 volumes:
   pvpgn-var:
+  pvpgn-accounts:

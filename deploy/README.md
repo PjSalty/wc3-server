@@ -15,7 +15,7 @@ Edit `.env`. The values you must set:
 |----------|------|
 | `PUBLIC_IP` | Your host's public (WAN) IP, advertised to players. |
 | `REALM_NAME` | The realm's display name, shown in the launcher's gateway list. |
-| `RELAY_TOKEN` | Optional shared token launchers present. Empty = token gate off. Set `RELAY_REQUIRE_AUTH=1` to enforce it. |
+| `RELAY_TOKEN` | Shared token every launcher presents. Generate one with `openssl rand -hex 32`. The relay will not start without it. |
 
 Registry: images build locally by default (`IMAGE_REGISTRY=localhost/wc3`). To
 pull prebuilt images instead, set `IMAGE_REGISTRY=ghcr.io/your-org` and the
@@ -42,11 +42,34 @@ Forward these from your router/firewall to the host (all TCP):
 Point a DNS **A record** at your `PUBLIC_IP` (DNS-only; do not proxy it, the
 protocol is raw TCP, not HTTP).
 
-## 4. TLS on the relay (recommended)
+## 4. TLS certificate (required)
 
-Put a cert + key in `deploy/tls/` and set `RELAY_TLS_CERT` / `RELAY_TLS_KEY` to
-their in-container paths. Set `RELAY_REQUIRE_TLS=1` once it works. The launcher
-can pin the relay cert's SPKI hash, so a self-signed cert is fine.
+The relay and the map server both serve TLS and will not start without a
+certificate. The launcher pins the certificate's public key, so a self-signed
+one is enough and no public CA is involved. Do this before step 2:
+
+```bash
+mkdir -p tls
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+  -subj "/CN=your.server.example" -addext "subjectAltName=DNS:your.server.example" \
+  -keyout tls/privkey.pem -out tls/fullchain.pem
+# the containers run as uid 1000 and read these through a read-only mount
+sudo chown 1000 tls/privkey.pem && chmod 0400 tls/privkey.pem
+```
+
+The pin your players' launchers need (`certPin` in `wc3-launcher.json`, or
+`--cert-pin`) is the SHA-256 of that public key:
+
+```bash
+openssl x509 -in tls/fullchain.pem -pubkey -noout \
+  | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl base64
+```
+
+Both gates are on by default. `RELAY_REQUIRE_TLS=0` and `RELAY_REQUIRE_AUTH=0`
+turn them off, and exist for a local test, not for a server on the internet.
+
+Accounts: in-client signup is open by default so friends can register. Once
+they have, set `PVPGN_NEW_ACCOUNTS=false` and restart pvpgn.
 
 ## 5. Map library (map sync)
 
@@ -65,9 +88,9 @@ every player's map folder. You are the only curator - add maps you trust, from
 moderated sources. To update a map, add it under a new (versioned) filename;
 launchers pick it up on next start.
 
-HTTPS is required (launchers only sync over TLS): reuse the relay's cert by
-setting `MAPD_TLS_CERT` / `MAPD_TLS_KEY` to the mounted `/tls` paths. The
-launcher pins the same cert as the relay, so a self-signed cert is fine.
+HTTPS is required (launchers only sync over TLS). The map server reuses the
+relay's certificate through `MAPD_TLS_CERT` / `MAPD_TLS_KEY`, which already
+point at the mounted `/tls` paths, and the launcher pins the same key.
 
 ## 6. Point the launcher at it
 
