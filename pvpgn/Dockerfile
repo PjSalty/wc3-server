@@ -98,10 +98,13 @@ COPY --from=build /usr/local/pvpgn /usr/local/pvpgn
 COPY conf/bnetd.conf.overrides /usr/local/pvpgn/etc/pvpgn/bnetd.conf.overrides
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 
-# The runtime user owns writable state (account DB, logs) and the config the
-# entrypoint patches in place. Binaries stay root-owned, read+exec only.
+# The runtime user owns only what it writes: the state (account DB, logs) and
+# the directory the entrypoint renders the running config into. Binaries and the
+# installed config stay root-owned and read-only to it, so the container runs
+# unchanged on a read-only root with a tmpfs over /run/pvpgn.
 RUN chmod +x /usr/local/bin/entrypoint.sh \
- && chown -R pvpgn:pvpgn /usr/local/pvpgn/etc /usr/local/pvpgn/var
+ && mkdir -p /run/pvpgn \
+ && chown -R pvpgn:pvpgn /usr/local/pvpgn/var /run/pvpgn
 
 USER pvpgn
 WORKDIR /usr/local/pvpgn
