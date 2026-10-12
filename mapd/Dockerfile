@@ -15,7 +15,7 @@ FROM golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cd
 # Pinned launcher release: the tag for readability, the commit as the actual pin.
 # Keep it the same in ../relay/Dockerfile.
 ARG LAUNCHER_REF=v1.3.11
-ARG LAUNCHER_SHA=95a0885d0a03d8b786abb2d0029ca567f9beb153
+ARG LAUNCHER_SHA=0c01d6bcbe1da1e09fd7f86caaec61c6d374ecf7
 
 ENV GOTOOLCHAIN=local GOFLAGS=-mod=readonly
 WORKDIR /src
