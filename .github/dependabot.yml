@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Bumps the SHA-pinned `uses:` refs through the trailing `# vX.Y.Z` comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: [minor, patch]
+
+  # The base images, pinned by tag and digest in each Dockerfile.
+  - package-ecosystem: docker
+    directories:
+      - /pvpgn
+      - /relay
+      - /mapd
+    schedule:
+      interval: weekly
+    groups:
+      base-images:
+        patterns: ["*"]
