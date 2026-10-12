@@ -142,7 +142,12 @@ main() {
         || die "the container is not on a read-only root"
     docker exec "${CONTAINER}" grep -q '^Seccomp:[[:space:]]*2$' /proc/1/status \
         || die "no seccomp filter is applied to the daemon"
-    log "read-only root, seccomp filter and the signup switch are all in effect"
+    # Docker's default profile also puts a process in filter mode, so the mode
+    # alone does not show that the profile in the compose file was applied.
+    docker inspect -f '{{range .HostConfig.SecurityOpt}}{{println .}}{{end}}' "${CONTAINER}" \
+        | grep -q '^seccomp=.*"defaultAction":"SCMP_ACT_ERRNO"' \
+        || die "the daemon is not running under the compose file's seccomp profile"
+    log "read-only root, the seccomp allowlist and the signup switch are all in effect"
 
     log "PASS"
 }
