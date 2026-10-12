@@ -79,6 +79,7 @@ public/WAN IP. `bnetd` runs in the foreground (`-f`) as pid 1, so
 | `PVPGN_LOCAL_CIDR` | `192.168.0.0/16,10.0.0.0/8,172.16.0.0/12` | client networks that keep the internal w3route address. Only clients outside these get the public IP. |
 | `PVPGN_W3ROUTE_PORT` | `6200` | w3route TCP port (keep in sync with `w3routeaddr`). |
 | `PVPGN_LOG_STDOUT` | `true` | send the log to stdout. Set `false` to log to `var/pvpgn/bnetd.log`. |
+| `PVPGN_RUNTIME_DIR` | `/run/pvpgn` | where the entrypoint writes the config bnetd runs with. The installed config is never edited, so the root filesystem can be read-only with a tmpfs here. |
 | `PVPGN_NEW_ACCOUNTS` | *(overlay: `true`)* | `true` or `false`. `false` closes in-client account signup. |
 | `PVPGN_TRACK` | *(overlay: `0`)* | seconds between announcements to public trackers. `0` never announces. |
 

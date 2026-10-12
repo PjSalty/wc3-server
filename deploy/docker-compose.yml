@@ -33,10 +33,19 @@ services:
     # Contain the daemon: bnetd parses untrusted input straight off the
     # internet. It binds high ports and runs non-root in the image, so it needs
     # no capabilities, and the limits keep a flood or a bug from taking the host.
+    # The root filesystem is read-only: the entrypoint renders the running
+    # config into the tmpfs below, and everything bnetd writes is on a volume.
+    # The seccomp profile is an allowlist of the syscalls the daemon and its
+    # entrypoint use, in place of Docker's much wider default.
+    read_only: true
+    tmpfs:
+      - /run/pvpgn:uid=1000,gid=1000,mode=0700,size=1m
+      - /tmp:size=16m
     mem_limit: 256m
     pids_limit: 256
     security_opt:
       - no-new-privileges:true
+      - seccomp:./seccomp-pvpgn.json
     cap_drop:
       - ALL
     # 6112/tcp = bnetd client port (login, chat, game list).

@@ -16,6 +16,12 @@ set -euo pipefail
 readonly PVPGN_PREFIX="/usr/local/pvpgn"
 readonly BNETD_BIN="${PVPGN_PREFIX}/sbin/bnetd"
 readonly OVERRIDES_FILE="${PVPGN_PREFIX}/etc/pvpgn/bnetd.conf.overrides"
+readonly STATE_DIR="${PVPGN_PREFIX}/var/pvpgn"
+
+# Where the config bnetd runs with is written. The installed tree is never
+# edited, so the container runs on a read-only root filesystem: the compose file
+# mounts a small tmpfs here. Without one the image's own directory is used.
+readonly RUNTIME_DIR="${PVPGN_RUNTIME_DIR:-/run/pvpgn}"
 
 # w3route port the WC3 clients reach for matchmaking (must match w3routeaddr).
 readonly W3ROUTE_PORT="${PVPGN_W3ROUTE_PORT:-6200}"
@@ -46,9 +52,8 @@ PVPGN_TRACK="${PVPGN_TRACK:-}"
 log() { printf '[entrypoint] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
 
-# Locate the installed bnetd.conf. bnetd expands ${SYSCONFDIR}/${LOCALSTATEDIR}
-# itself, so we only need the concrete file to patch keys and to place the
-# transfile it references.
+# Locate the installed bnetd.conf: the pristine file the running config is
+# copied from. It is read, never written.
 find_conf() {
     local conf="${PVPGN_PREFIX}/etc/pvpgn/bnetd.conf"
     [[ -f "${conf}" ]] || conf="$(find "${PVPGN_PREFIX}" -type f -name bnetd.conf | head -n1)"
@@ -65,7 +70,12 @@ set_conf_key() {
     # temp-file rewrite only if a value ever needs a literal SOH byte.
     local d=$'\001'
     if grep -Eq "^[#[:space:]]*${key}[[:space:]]*=" "${file}"; then
-        sed -i "s${d}^[#[:space:]]*${key}[[:space:]]*=.*${d}${line}${d}" "${file}"
+        # Rewritten through a variable, not sed -i: editing in place makes a temp
+        # file and copies the original's attributes onto it, which takes syscalls
+        # the seccomp profile has no other reason to allow.
+        local out
+        out="$(sed "s${d}^[#[:space:]]*${key}[[:space:]]*=.*${d}${line}${d}" "${file}")"
+        printf '%s\n' "${out}" > "${file}"
     else
         printf '%s\n' "${line}" >> "${file}"
     fi
@@ -117,7 +127,7 @@ apply_env_settings() {
 # the public IP for the w3route port while LAN clients keep the internal one.
 configure_nat() {
     local conf="$1"
-    local transfile="${PVPGN_PREFIX}/etc/pvpgn/address_translation.conf"
+    local transfile="${RUNTIME_DIR}/address_translation.conf"
 
     if [[ -z "${PVPGN_PUBLIC_IP}" ]]; then
         log "PVPGN_PUBLIC_IP unset, no NAT translation (LAN/direct only)"
@@ -142,6 +152,19 @@ configure_nat() {
     set_conf_key "${conf}" "transfile" "\"${transfile}\""
 }
 
+# The ban list is the one file under etc/ that bnetd writes back (on /ipban and
+# when it exits). Keep it with the rest of the state, so bans survive a restart
+# and the config tree can stay read-only.
+configure_banlist() {
+    local conf="$1"
+    local banfile="${STATE_DIR}/bnban.conf"
+    if [[ ! -e "${banfile}" ]]; then
+        cp "${PVPGN_PREFIX}/etc/pvpgn/bnban.conf" "${banfile}" 2>/dev/null \
+            || log "warn: could not seed ${banfile}; bans will not persist until it is writable"
+    fi
+    set_conf_key "${conf}" "ipbanfile" "\"${banfile}\""
+}
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -149,9 +172,14 @@ configure_nat() {
 main() {
     [[ -x "${BNETD_BIN}" ]] || die "bnetd binary not found/executable at ${BNETD_BIN}"
 
-    local conf
-    conf="$(find_conf)"
-    log "using config ${conf}"
+    local installed conf
+    installed="$(find_conf)"
+    mkdir -p "${RUNTIME_DIR}" 2>/dev/null || true
+    [[ -d "${RUNTIME_DIR}" && -w "${RUNTIME_DIR}" ]] \
+        || die "${RUNTIME_DIR} is not writable by uid $(id -u); mount a tmpfs there (see deploy/docker-compose.yml)"
+    conf="${RUNTIME_DIR}/bnetd.conf"
+    cp "${installed}" "${conf}"
+    log "using config ${conf} (from ${installed})"
 
     apply_overrides "${conf}"
     apply_env_settings "${conf}"
@@ -165,10 +193,12 @@ main() {
 
     # Plain-file account store lives under var/pvpgn; make sure the dirs exist
     # (a mounted volume may start empty). var must be writable by this user.
-    mkdir -p "${PVPGN_PREFIX}/var/pvpgn/users" \
-             "${PVPGN_PREFIX}/var/pvpgn/clans" \
-             "${PVPGN_PREFIX}/var/pvpgn/teams" 2>/dev/null \
+    mkdir -p "${STATE_DIR}/users" \
+             "${STATE_DIR}/clans" \
+             "${STATE_DIR}/teams" 2>/dev/null \
         || log "warn: could not create var dirs (check mounted volume perms for uid 1000)"
+
+    configure_banlist "${conf}"
 
     log "starting bnetd in foreground (-f)"
     # -f = do not daemonize, -c = explicit config path. exec so bnetd becomes
