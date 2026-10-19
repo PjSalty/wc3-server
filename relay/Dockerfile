@@ -11,7 +11,7 @@
 # protocol, and are built from a pinned release of it. This repo used to carry
 # its own copy, and the copy fell behind.
 
-FROM golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
+FROM golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS build
 
 # Pinned launcher release. The tag is for readability; the commit is the actual
 # pin, asserted after the clone so a moved or re-pointed tag fails the build

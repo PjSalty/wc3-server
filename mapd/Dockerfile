@@ -10,7 +10,7 @@
 # github.com/PjSalty/wc3-launcher, next to the client that reads the same
 # manifest, and are built from a pinned release of it.
 
-FROM golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
+FROM golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS build
 
 # Pinned launcher release: the tag for readability, the commit as the actual pin.
 # Keep it the same in ../relay/Dockerfile.
