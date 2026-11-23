@@ -11,7 +11,7 @@
 # protocol, and are built from a pinned release of it. This repo used to carry
 # its own copy, and the copy fell behind.
 
-FROM golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
+FROM golang:1.27-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS build
 
 # Pinned launcher release. The tag is for readability; the commit is the actual
 # pin, asserted after the clone so a moved or re-pointed tag fails the build
@@ -27,7 +27,7 @@ RUN git clone --depth 1 --branch "${LAUNCHER_REF}" \
 RUN go mod download && go mod verify
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /wc3-relay ./cmd/wc3-relay
 
-FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+FROM debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 COPY --from=build /wc3-relay /usr/local/bin/wc3-relay
 # Non-root; the daemon only needs to bind high ports (>1024) on the host network.
 USER 1000:1000

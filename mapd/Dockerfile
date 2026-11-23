@@ -10,7 +10,7 @@
 # github.com/PjSalty/wc3-launcher, next to the client that reads the same
 # manifest, and are built from a pinned release of it.
 
-FROM golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
+FROM golang:1.27-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d AS build
 
 # Pinned launcher release: the tag for readability, the commit as the actual pin.
 # Keep it the same in ../relay/Dockerfile.
@@ -25,7 +25,7 @@ RUN git clone --depth 1 --branch "${LAUNCHER_REF}" \
 RUN go mod download && go mod verify
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /wc3-mapd ./cmd/wc3-mapd
 
-FROM debian:13-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f
+FROM debian:13-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
 COPY --from=build /wc3-mapd /usr/local/bin/wc3-mapd
 # Non-root, same uid as the relay so it can read the shared /tls. Reads the
 # read-only /maps mount and binds high port 7443.
